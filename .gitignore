@@ -5,3 +5,4 @@ __pycache__/
 *.pt
 *.ckpt
 *.ipynb_checkpoints/
+assets/sam_vit_b.pth
