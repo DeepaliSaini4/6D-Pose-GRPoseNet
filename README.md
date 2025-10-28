@@ -1,147 +1,145 @@
 # GRPoseNet — 6D Object Pose Estimation using Open-World Segmentation
 
-This repository presents **GRPoseNet**, a complete implementation of a 6-Degree-of-Freedom (6D) object pose estimation pipeline that integrates **Segment Anything (SAM)** and **DINOv2**.  
-The system is designed for generalizable object understanding in open-world settings, combining segmentation, viewpoint selection, and transformer-based refinement within a unified framework.
+**GRPoseNet** is a complete 6-Degree-of-Freedom (6D) object pose estimation pipeline that integrates **Segment Anything (SAM)** and **DINOv2**.
+It performs open-world segmentation, viewpoint similarity prediction, and pose refinement to achieve accurate 3D pose recovery for unseen objects.
 
-The implementation demonstrates how large vision models can be adapted for precise geometric reasoning — estimating an object’s full 3D pose (rotation + translation) even when training data is limited or synthetic.
+This repository demonstrates how large-scale vision models can be adapted for geometric reasoning — estimating both the orientation and position of arbitrary objects without requiring class-specific training data.
 
 ---
 
 ## Overview
 
-6D object pose estimation aims to determine both the **orientation (R)** and **translation (T)** of an object in 3D space.  
-GRPoseNet approaches this through a modular design composed of three stages:
+6D object pose estimation determines both the **rotation (R)** and **translation (T)** of an object in 3D space.
+GRPoseNet follows a modular structure consisting of three core stages:
 
-| Module | Core Components | Purpose |
-|:--|:--|:--|
-| **Detector** | SAM + DINOv2 | Performs zero-shot object segmentation and visual feature extraction. |
-| **Viewpoint Selector** | Lightweight MLP | Predicts view similarity and approximate in-plane rotation between a target view and reference views. |
-| **Multi-Scale Refiner** | Transformer Encoder | Refines coarse pose predictions (ΔR, ΔT) into accurate 6D transformations. |
+| Module              | Core Components     | Purpose                                                                              |
+| ------------------- | ------------------- | ------------------------------------------------------------------------------------ |
+| Detector            | SAM + DINOv2        | Performs zero-shot segmentation and extracts dense visual embeddings.                |
+| Viewpoint Selector  | Lightweight MLP     | Predicts similarity and relative rotation between a target view and reference views. |
+| Multi-Scale Refiner | Transformer Encoder | Refines coarse rotation and translation into precise 6D pose values.                 |
 
-This implementation reproduces and extends the methodology described in the accompanying research paper *(Content.pdf)*.
+Each component is designed to function independently but integrates seamlessly into the end-to-end pipeline.
 
 ---
 
 ## 1. Detector
 
-The **Detector** is responsible for discovering and isolating objects in arbitrary scenes and extracting visual embeddings for each segmented region.
+The Detector identifies and isolates objects in arbitrary images using SAM, then encodes them into feature representations with DINOv2.
 
-- **Segmentation:**  
-  Uses **Segment Anything (SAM)** ViT-B backbone for open-world object segmentation without class constraints.
+* **Segmentation:** Segment Anything (ViT-B) produces binary object masks in open-world scenarios.
+* **Feature Extraction:** DINOv2 (ViT-S/14) generates 384-dimensional feature embeddings for each cropped region.
+* **Matching:** Cosine similarity between target and reference embeddings determines appearance consistency across views.
 
-- **Feature Extraction:**  
-  Uses **DINOv2 (ViT-S/14)** to encode cropped object regions into 384-dimensional normalized feature embeddings.
-
-- **Matching Mechanism:**  
-  Cosine similarity between feature vectors enables recognition and matching across different viewpoints or lighting conditions.
-
-The detector forms the foundation for downstream modules by providing object-level embeddings that are both semantically and geometrically meaningful.
+These embeddings serve as the input foundation for viewpoint selection and pose refinement.
 
 ---
 
 ## 2. Viewpoint Selector
 
-The **Viewpoint Selector** predicts the most relevant reference view for a given target object crop.  
-It uses feature pairs from the detector to jointly predict:
+The Viewpoint Selector predicts which reference image best matches a given target object view.
+It also estimates the approximate in-plane rotation angle between the two.
 
-1. **Similarity score** — how closely the reference matches the target view.  
-2. **In-plane rotation angle** — the relative orientation offset.
+Architecture Summary:
 
-Architecture summary:
-- Input: concatenated DINOv2 embeddings of target and reference crops  
-- Network: two-branch MLP  
-- Output: similarity logits + rotation angle predictions  
-- Training: supervised on synthetic data generated through controlled 2D rotations
+* Input: concatenated feature vectors of target and reference crops
+* Network: dual-branch MLP for similarity and angle prediction
+* Output: similarity logits and rotation angles
+* Training: synthetic 2D rotations applied to base images
 
-This component provides coarse viewpoint alignment that helps the refiner focus on finer geometric corrections.
+This module provides coarse alignment and prepares the data for geometric refinement.
 
 ---
 
 ## 3. Multi-Scale Refiner
 
-The **Refiner** performs transformer-based residual prediction to enhance the coarse pose estimates produced by the selector.
+The Refiner adjusts the predicted poses by learning residual corrections across multiple feature scales.
 
-Key details:
-- Architecture: Two-layer Transformer Encoder  
-- Inputs: feature tensors at multiple scales  
-- Outputs: ΔR (rotation residual) and ΔT (translation residual)  
-- Loss: combined L2 loss on rotation and translation errors
+Key Details:
 
-By learning feature interactions across scales, the refiner improves spatial accuracy and reduces projection errors for challenging object geometries.
+* Two-layer Transformer Encoder for cross-scale attention
+* Outputs ΔR (rotation residual) and ΔT (translation residual)
+* Optimized using combined L2 loss on both outputs
+* Simulated synthetic data for training stability
+
+The refiner ensures smoother orientation prediction and reduced projection error.
 
 ---
 
-## Implementation Details
+## Implementation Summary
 
-- **Framework:** PyTorch 2.x  
-- **Models Used:**  
-  - Segment Anything (SAM ViT-B)  
-  - DINOv2 ViT-S/14 (pretrained)  
-- **Training:**  
-  - Synthetic dataset for viewpoint selection  
-  - Simulated pose perturbations for refinement  
-- **Hardware:** GPU runtime (Colab / CUDA environment)  
-- **Output:** qualitative visualization + evaluation metrics
+* **Framework:** PyTorch, TorchVision
+* **Pretrained Models:**
+
+  * SAM ViT-B (for segmentation)
+  * DINOv2 ViT-S/14 (for embeddings)
+* **Training Data:** synthetic viewpoints and pose perturbations
+* **Hardware:** optimized for GPU (Colab T4 / A100)
+* **Output:** visual and numerical evaluation metrics
 
 ---
 
 ## Output Visualization
 
-The pipeline generates an evaluation figure `outputs/final_pipeline.png` that includes:
-- The segmented target object (SAM output)  
-- The best matching reference image predicted by the selector  
-- Bar chart of rotation residuals (ΔRx, ΔRy, ΔRz) predicted by the refiner  
-- Numerical summary of mean ADD and projection error metrics  
+The pipeline produces the figure `outputs/final_pipeline.png`, showing:
+
+* The segmented target object
+* The most similar reference image predicted by the selector
+* Bar graph of rotation residuals (ΔRx, ΔRy, ΔRz)
+* Mean ADD score and projection error summary
 
 Example:
--Mean ADD score: 0.364
--Mean Projection Error: 0.162
-These metrics demonstrate consistency across synthetic trials and confirm the stability of the modular architecture.
+
+```
+Mean ADD score: 0.364
+Mean Projection Error: 0.162
+```
 
 ---
 
-## Reproducing the Results
+## How to Use
 
-To reproduce the pipeline end-to-end:
+1. Open `6D_Pose_GRPoseNet.ipynb` in Google Colab.
+2. Enable GPU: Runtime → Change runtime type → GPU.
+3. Run all cells sequentially.
+4. The notebook will automatically:
 
-1. Open **6D_Pose_GRPoseNet.ipynb** in Google Colab.  
-2. Enable GPU runtime via `Runtime → Change runtime type → GPU`.  
-3. Execute all cells sequentially.  
-4. The notebook will:
-   - Initialize dependencies and load pretrained SAM/DINOv2 weights  
-   - Perform segmentation and feature extraction  
-   - Train selector and refiner on synthetic data  
-   - Generate final visual and quantitative results  
+   * Load pretrained SAM and DINOv2 models
+   * Perform segmentation and feature extraction
+   * Train the Selector and Refiner
+   * Generate final outputs and visualizations
 
 ---
 
 ## Repository Structure
+
+```
 6D-Pose-GRPoseNet/
-┣ 📂 outputs/
-┃ ┗ final_pipeline.png
-┣ 📄 6D_Pose_GRPoseNet.ipynb
-┣ 📄 Content.pdf ← Full Research Paper
-┣ 📄 LICENSE
-┣ 📄 .gitignore
-┗ 📄 README.md
+ ├── outputs/
+ │   └── final_pipeline.png
+ ├── 6D_Pose_GRPoseNet.ipynb
+ ├── Content.pdf            ← Full Research Paper
+ ├── LICENSE
+ ├── .gitignore
+ └── README.md
+```
 
 ---
 
 ## Research Paper
 
-This implementation is based on the research documented in:
+This implementation is based on the work titled:
 
-**“6D Object Pose Estimation using GRPoseNet: Generalized Real-World Vision via SAM and DINOv2 Fusion”**  
+**“6D Object Pose Estimation using GRPoseNet: Generalized Real-World Vision via SAM and DINOv2 Fusion”**
 *(included as Content.pdf in this repository)*
 
-The paper elaborates on the theoretical foundations, training methodology, and experimental results that inspired this implementation.
+The paper details the theoretical motivation, architectural design, and experimental validation behind this implementation.
 
 ---
 
 ## Summary
 
-GRPoseNet showcases how combining foundation models for segmentation and representation learning can lead to generalizable 6D pose estimation.  
-By decoupling object understanding (SAM + DINOv2) from geometric refinement (Selector + Refiner), the system achieves both **robustness** and **scalability** across diverse, unseen environments.
+GRPoseNet demonstrates how integrating open-world segmentation (SAM) and self-supervised representation learning (DINOv2) can enable generalized 6D pose estimation.
+By separating perception (Detector) and geometric reasoning (Selector + Refiner), it achieves adaptable, explainable, and transferable performance across unseen domains.
 
 ---
 
