@@ -1,0 +1,7 @@
+# outputs and caches
+outputs/
+__pycache__/
+*.pth
+*.pt
+*.ckpt
+*.ipynb_checkpoints/
